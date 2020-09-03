@@ -82,7 +82,7 @@
 #include "nrf_ble_qwr.h"
 #include "nrf_pwr_mgmt.h"
 #include "peer_manager_handler.h"
-#include "joystick.h"
+#include "gamepad_driver.h"
 
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
@@ -132,13 +132,18 @@
 #define RESERVED_RSSI_BYTE              0x80                                        /**< Reserved RSSI byte, used to maintain forwards and backwards compatibility. */
 #endif
 
-#define INPUT_REPORT_COUNT              2                                           /**< Number of input reports in this application. */
+#define INPUT_REPORT_COUNT              3                                           /**< Number of input reports in this application. */
 #define INPUT_REP_BUTTONS_LEN           1                                           /**< Length of Mouse Input Report containing button data. */
-#define INPUT_REP_THUMBSTICK_LEN        2                                           /**< Length of Mouse Input Report containing movement data. */
+#define INPUT_REP_LEFT_STICK_LEN        2                                           /**< Length of Mouse Input Report containing movement data. */
+#define INPUT_REP_RIGHT_STICK_LEN       2
+
 #define INPUT_REP_BUTTONS_INDEX         0                                           /**< Index of Mouse Input Report containing button data. */
-#define INPUT_REP_THUMBSTICK_INDEX      1                                           /**< Index of Mouse Input Report containing movement data. */
+#define INPUT_REP_LEFT_STICK_INDEX      1                                           /**< Index of Mouse Input Report containing movement data. */
+#define INPUT_REP_RIGHT_STICK_INDEX     2
+
 #define INPUT_REP_REF_BUTTONS_ID        1                                           /**< Id of reference to Mouse Input Report containing button data. */
-#define INPUT_REP_REF_THUMBSTICK_ID     2                                           /**< Id of reference to Mouse Input Report containing movement data. */
+#define INPUT_REP_REF_LEFT_STICK_ID     2                                           /**< Id of reference to Mouse Input Report containing movement data. */
+#define INPUT_REP_REF_RIGHT_STICK_ID    3
 
 #define BASE_USB_HID_SPEC_VERSION       0x0101                                      /**< Version number of base USB HID Specification implemented by this application. */
 
@@ -157,17 +162,30 @@
 #define APP_ADV_FAST_DURATION           3000                                        /**< The advertising duration of fast advertising in units of 10 milliseconds. */
 #define APP_ADV_SLOW_DURATION           18000                                       /**< The advertising duration of slow advertising in units of 10 milliseconds. */
 
+#define STICK_SENSITIVITY               2
 
 APP_TIMER_DEF(m_battery_timer_id);                                                  /**< Battery timer. */
 BLE_BAS_DEF(m_bas);                                                                 /**< Battery service instance. */
 BLE_HIDS_DEF(m_hids,                                                                /**< HID service instance. */
              NRF_SDH_BLE_TOTAL_LINK_COUNT,
              INPUT_REP_BUTTONS_LEN,
-             INPUT_REP_THUMBSTICK_LEN);
+             INPUT_REP_LEFT_STICK_LEN,
+             INPUT_REP_RIGHT_STICK_LEN);
 NRF_BLE_GATT_DEF(m_gatt);                                                           /**< GATT module instance. */
 NRF_BLE_QWR_DEF(m_qwr);                                                             /**< Context for the Queued Write module.*/
 BLE_ADVERTISING_DEF(m_advertising);                                                 /**< Advertising module instance. */
 
+
+static gamepad_report_t last_reported = {
+  .buttons_1 = 0,
+  .buttons_2 = 0,
+  .left_stick_x = 0,
+  .left_stick_y = 0,
+  .right_stick_x = 0,
+  .right_stick_y = 0,
+  .left_trigger = 0,
+  .right_trigger = 0,
+};
 
 static int count = 0;
 uint16_t saadc_buffer[2] = {0};
@@ -564,6 +582,17 @@ static void hids_init(void)
         0x26, 0xff, 0x00,              //     LOGICAL_MAXIMUM (255)
         0x81, 0x02,                    //     INPUT (Data,Var,Abs)
         0xc0,                          //   END_COLLECTION
+        0x85, 0x03,                    //   REPORT_ID (3)
+        0x09, 0x01,                    //   USAGE (Pointer)
+        0xa1, 0x00,                    //   COLLECTION (Physical)
+        0x75, 0x08,                    //     REPORT_SIZE (8)
+        0x95, 0x02,                    //     REPORT_COUNT (2)
+        0x09, 0x32,                    //     USAGE (Z)
+        0x09, 0x35,                    //     USAGE (Rz)
+        0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
+        0x26, 0xff, 0x00,              //     LOGICAL_MAXIMUM (255)
+        0x81, 0x02,                    //     INPUT (Data,Var,Abs)
+        0xc0,                          //   END_COLLECTION
         0xc0                           // END_COLLECTION
     };
 
@@ -579,9 +608,18 @@ static void hids_init(void)
     p_input_report->sec.wr      = SEC_JUST_WORKS;
     p_input_report->sec.rd      = SEC_JUST_WORKS;
 
-    p_input_report                      = &inp_rep_array[INPUT_REP_THUMBSTICK_INDEX];
-    p_input_report->max_len             = INPUT_REP_THUMBSTICK_LEN;
-    p_input_report->rep_ref.report_id   = INPUT_REP_REF_THUMBSTICK_ID;
+    p_input_report                      = &inp_rep_array[INPUT_REP_LEFT_STICK_INDEX];
+    p_input_report->max_len             = INPUT_REP_LEFT_STICK_LEN;
+    p_input_report->rep_ref.report_id   = INPUT_REP_REF_LEFT_STICK_ID;
+    p_input_report->rep_ref.report_type = BLE_HIDS_REP_TYPE_INPUT;
+
+    p_input_report->sec.cccd_wr = SEC_JUST_WORKS;
+    p_input_report->sec.wr      = SEC_JUST_WORKS;
+    p_input_report->sec.rd      = SEC_JUST_WORKS;
+
+    p_input_report                      = &inp_rep_array[INPUT_REP_RIGHT_STICK_INDEX];
+    p_input_report->max_len             = INPUT_REP_RIGHT_STICK_LEN;
+    p_input_report->rep_ref.report_id   = INPUT_REP_REF_RIGHT_STICK_ID;
     p_input_report->rep_ref.report_type = BLE_HIDS_REP_TYPE_INPUT;
 
     p_input_report->sec.cccd_wr = SEC_JUST_WORKS;
@@ -1064,21 +1102,50 @@ static void buttons_value_send(bool button1, bool button2, bool button3, bool bu
     }
 }
 
-static void thumbstick_value_send(uint8_t horizontal, uint8_t vertical)
+static void left_stick_value_send(uint8_t horizontal, uint8_t vertical)
 {
     ret_code_t err_code;
 
-    uint8_t buffer[INPUT_REP_THUMBSTICK_LEN];
+    uint8_t buffer[INPUT_REP_LEFT_STICK_LEN];
 
 
-    APP_ERROR_CHECK_BOOL(INPUT_REP_THUMBSTICK_LEN == 2);
+    APP_ERROR_CHECK_BOOL(INPUT_REP_LEFT_STICK_LEN == 2);
 
     buffer[0] = horizontal;
     buffer[1] = vertical;
 
     err_code = ble_hids_inp_rep_send(&m_hids,
-                                        INPUT_REP_THUMBSTICK_INDEX,
-                                        INPUT_REP_THUMBSTICK_LEN,
+                                        INPUT_REP_LEFT_STICK_INDEX,
+                                        INPUT_REP_LEFT_STICK_LEN,
+                                        buffer,
+                                        m_conn_handle);
+
+    if ((err_code != NRF_SUCCESS) &&
+        (err_code != NRF_ERROR_INVALID_STATE) &&
+        (err_code != NRF_ERROR_RESOURCES) &&
+        (err_code != NRF_ERROR_BUSY) &&
+        (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+       )
+    {
+        APP_ERROR_HANDLER(err_code);
+    }
+}
+
+static void right_stick_value_send(uint8_t horizontal, uint8_t vertical)
+{
+    ret_code_t err_code;
+
+    uint8_t buffer[INPUT_REP_RIGHT_STICK_LEN];
+
+
+    APP_ERROR_CHECK_BOOL(INPUT_REP_RIGHT_STICK_LEN == 2);
+
+    buffer[0] = horizontal;
+    buffer[1] = vertical;
+
+    err_code = ble_hids_inp_rep_send(&m_hids,
+                                        INPUT_REP_RIGHT_STICK_INDEX,
+                                        INPUT_REP_RIGHT_STICK_LEN,
                                         buffer,
                                         m_conn_handle);
 
@@ -1237,35 +1304,63 @@ void initialize_sample_timer()
   NRF_TIMER4->TASKS_START = 1;
 }
 
-void initialize_sample_timer_2()
+void gamepad_on_evt(gamepad_evt_t gamepad_evt)
 {
-  NRF_TIMER3->MODE = 0;
-  NRF_TIMER3->BITMODE = 0;
-  NRF_TIMER3->PRESCALER = 8;
-
-  NRF_TIMER3->INTENSET = 1 << 16;
-  NRF_TIMER3->SHORTS = 1;
-
-  NVIC_EnableIRQ(TIMER3_IRQn);
-  NVIC_SetPriority(TIMER3_IRQn, 7);
-
-  NRF_TIMER3->CC[0] = 1000;
-  NRF_TIMER3->TASKS_START = 1;
-}
-
-void TIMER3_IRQHandler()
-{
-  if (NRF_TIMER3->EVENTS_COMPARE[0])
+  if (count > 100) 
   {
-    if (m_conn_handle != BLE_CONN_HANDLE_INVALID)
+  switch (gamepad_evt.evt_type)
+  {
+    case GAMEPAD_BUTTONS_1:
+      printf("GAMEPAD_BUTTONS_1\n");
+      break;
+
+    case GAMEPAD_BUTTONS_2:
+      printf("GAMEPAD_BUTTONS_2\n");
+      break;
+
+    case GAMEPAD_LEFT_STICK:
     {
-      if (count > 1000)
+      uint8_t delta_x = abs(gamepad_evt.evt_value[0] - last_reported.left_stick_x);
+      uint8_t delta_y = abs(gamepad_evt.evt_value[1] - last_reported.left_stick_y);
+      if (delta_x > STICK_SENSITIVITY || delta_y > STICK_SENSITIVITY)
       {
-       thumbstick_value_send(saadc_buffer[0], saadc_buffer[1]);
-       }
+        printf("LEFT X: %hd, Y: %hd\n", gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
+        left_stick_value_send(gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
+        last_reported.left_stick_x = gamepad_evt.evt_value[0];
+        last_reported.left_stick_y = gamepad_evt.evt_value[1];
+      }
+      break;
     }
-    count++;
-    NRF_TIMER3->EVENTS_COMPARE[0] = 0;
+  
+    case GAMEPAD_RIGHT_STICK:
+    {
+      uint8_t delta_x = abs(gamepad_evt.evt_value[0] - last_reported.right_stick_x);
+      uint8_t delta_y = abs(gamepad_evt.evt_value[1] - last_reported.right_stick_y);
+      if (delta_x > STICK_SENSITIVITY || delta_y > STICK_SENSITIVITY)
+      {
+        printf("RIGHT X: %hd, Y: %hd\n", gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
+        right_stick_value_send(gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
+        last_reported.right_stick_x = gamepad_evt.evt_value[0];
+        last_reported.right_stick_y = gamepad_evt.evt_value[1];
+      }
+      break;
+    }
+    
+    case GAMEPAD_LEFT_TRIGGER:
+      printf("GAMEPAD_LEFT_TRIGGER\n");
+      break;
+
+    case GAMEPAD_RIGHT_TRIGGER:
+      printf("GAMEPAD_RIGHT_TRIGGER\n");
+      break;
+
+    default:
+      break;
+  }
+  }else
+  {
+   printf("COUNT: %d\n", count);
+  count++;
   }
 }
 
@@ -1275,12 +1370,11 @@ int main(void)
 {
     bool erase_bonds;
 
-    configure_stick(0, SAADC_CH_PSELP_PSELP_AnalogInput1, SAADC_CH_PSELP_PSELP_AnalogInput2);
-    initialize_saadc(&saadc_buffer[0], SAADC_RESOLUTION_VAL_8bit);
-
-    
     initialize_sample_timer();
-    initialize_sample_timer_2();
+    initialize_gamepad(&gamepad_on_evt);
+    configure_stick(0, SAADC_CH_PSELP_PSELP_AnalogInput1, SAADC_CH_PSELP_PSELP_AnalogInput2);
+    configure_stick(2, SAADC_CH_PSELP_PSELP_AnalogInput4, SAADC_CH_PSELP_PSELP_AnalogInput5);
+    initialize_saadc(SAADC_RESOLUTION_VAL_8bit);
   
     // Initialize.
     log_init();

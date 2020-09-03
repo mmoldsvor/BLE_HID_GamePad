@@ -1,20 +1,53 @@
-#include "Joystick.h"
+#include "gamepad_driver.h"
 
-void initialize_saadc(uint16_t *saadc_buffer_ptr, uint8_t resolution)
+static gamepad_evt_handler_t gamepad_evt_handler_instance;
+static int16_t saadc_buffer[4] = {0};
+
+void initialize_gamepad(gamepad_evt_handler_t gamepad_evt_handler)
+{
+  gamepad_evt_handler_instance = gamepad_evt_handler;
+}
+
+void initialize_saadc(uint8_t resolution)
 {
   NRF_SAADC->RESOLUTION = resolution << SAADC_RESOLUTION_VAL_Pos;
   
-  NRF_SAADC->RESULT.PTR = (uint32_t *) saadc_buffer_ptr;
-  NRF_SAADC->RESULT.MAXCNT = 2;
+  NRF_SAADC->RESULT.PTR = (uint32_t) &saadc_buffer[0];
+  NRF_SAADC->RESULT.MAXCNT = 4;
   
   NRF_PPI->CHEN |= (1 << 0);
   NRF_PPI->CH[0].EEP = (uint32_t) &NRF_SAADC->EVENTS_END;
   NRF_PPI->CH[0].TEP = (uint32_t) &NRF_SAADC->TASKS_START;
 
+  NRF_SAADC->INTENSET = 1 << 1;
+  NVIC_EnableIRQ(SAADC_IRQn);
+  NVIC_SetPriority(SAADC_IRQn, 7);
+
   NRF_SAADC->ENABLE = 1;
   NRF_SAADC->TASKS_START = 1;
 }
 
+void SAADC_IRQHandler()
+{
+  if (NRF_SAADC->EVENTS_END)
+  {
+    gamepad_evt_t gamepad_evt;
+
+    gamepad_evt.evt_type = GAMEPAD_LEFT_STICK;
+    gamepad_evt.evt_value[0] = fmax(0, saadc_buffer[0]);
+    gamepad_evt.evt_value[1] = fmax(0, saadc_buffer[1]);
+
+    gamepad_evt_handler_instance(gamepad_evt);
+
+    gamepad_evt.evt_type = GAMEPAD_RIGHT_STICK;
+    gamepad_evt.evt_value[0] = fmax(0, saadc_buffer[2]);
+    gamepad_evt.evt_value[1] = fmax(0, saadc_buffer[3]);
+
+    gamepad_evt_handler_instance(gamepad_evt);
+
+    NRF_SAADC->EVENTS_END = 0;
+  }
+}
 
 void configure_stick(uint8_t stick_index, uint8_t vertical_pin, uint8_t horizontal_pin)
 {
