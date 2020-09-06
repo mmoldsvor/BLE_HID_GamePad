@@ -68,7 +68,7 @@
 #include "ble_dis.h"
 #include "ble_conn_params.h"
 #include "sensorsim.h"
-#include "bsp_btn_ble.h"
+//#include "bsp_btn_ble.h"
 #include "app_scheduler.h"
 #include "nrf_sdh.h"
 #include "nrf_sdh_soc.h"
@@ -164,6 +164,13 @@
 
 #define STICK_SENSITIVITY               2
 
+#define Y_BUTTON          11
+#define X_BUTTON          12
+#define B_BUTTON          24
+#define A_BUTTON          25
+
+#define BUTTON_COUNT      4
+
 APP_TIMER_DEF(m_battery_timer_id);                                                  /**< Battery timer. */
 BLE_BAS_DEF(m_bas);                                                                 /**< Battery service instance. */
 BLE_HIDS_DEF(m_hids,                                                                /**< HID service instance. */
@@ -176,19 +183,8 @@ NRF_BLE_QWR_DEF(m_qwr);                                                         
 BLE_ADVERTISING_DEF(m_advertising);                                                 /**< Advertising module instance. */
 
 
-static gamepad_report_t last_reported = {
-  .buttons_1 = 0,
-  .buttons_2 = 0,
-  .left_stick_x = 0,
-  .left_stick_y = 0,
-  .right_stick_x = 0,
-  .right_stick_y = 0,
-  .left_trigger = 0,
-  .right_trigger = 0,
-};
+uint8_t buttons[] = {A_BUTTON, B_BUTTON, X_BUTTON, Y_BUTTON};
 
-static int count = 0;
-uint16_t saadc_buffer[2] = {0};
 static bool              m_in_boot_mode = false;                                    /**< Current protocol mode. */
 static uint16_t          m_conn_handle  = BLE_CONN_HANDLE_INVALID;                  /**< Handle of the current connection. */
 static pm_peer_id_t      m_peer_id;                                                 /**< Device reference handle to the current bonded central. */
@@ -740,12 +736,12 @@ static void sleep_mode_enter(void)
 {
     ret_code_t err_code;
 
-    err_code = bsp_indication_set(BSP_INDICATE_IDLE);
-    APP_ERROR_CHECK(err_code);
+    //err_code = bsp_indication_set(BSP_INDICATE_IDLE);
+    //APP_ERROR_CHECK(err_code);
 
     // Prepare wakeup buttons.
-    err_code = bsp_btn_ble_sleep_mode_prepare();
-    APP_ERROR_CHECK(err_code);
+    //err_code = bsp_btn_ble_sleep_mode_prepare();
+    //APP_ERROR_CHECK(err_code);
 
     // Go to system-off mode (this function will not return; wakeup will cause a reset).
     err_code = sd_power_system_off();
@@ -796,14 +792,14 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
     {
         case BLE_ADV_EVT_DIRECTED_HIGH_DUTY:
             NRF_LOG_INFO("Directed advertising.");
-            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_DIRECTED);
-            APP_ERROR_CHECK(err_code);
+            // err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_DIRECTED);
+            // APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_ADV_EVT_FAST:
             NRF_LOG_INFO("Fast advertising.");
-            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
-            APP_ERROR_CHECK(err_code);
+            // err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
+            // APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_ADV_EVT_SLOW:
@@ -813,27 +809,27 @@ static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
             err_code = ble_advertising_advdata_update(&m_advertising, &m_sp_advdata, NULL);
             APP_ERROR_CHECK(err_code);
 #endif
-            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_SLOW);
-            APP_ERROR_CHECK(err_code);
+            // err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_SLOW);
+            // APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_ADV_EVT_FAST_WHITELIST:
             NRF_LOG_INFO("Fast advertising with whitelist.");
-            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_WHITELIST);
-            APP_ERROR_CHECK(err_code);
+            // err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_WHITELIST);
+            // APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_ADV_EVT_SLOW_WHITELIST:
             NRF_LOG_INFO("Slow advertising with whitelist.");
-            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_WHITELIST);
-            APP_ERROR_CHECK(err_code);
+            // err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING_WHITELIST);
+            // APP_ERROR_CHECK(err_code);
             err_code = ble_advertising_restart_without_whitelist(&m_advertising);
             APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_ADV_EVT_IDLE:
-            err_code = bsp_indication_set(BSP_INDICATE_IDLE);
-            APP_ERROR_CHECK(err_code);
+            // err_code = bsp_indication_set(BSP_INDICATE_IDLE);
+            // APP_ERROR_CHECK(err_code);
             sleep_mode_enter();
             break;
 
@@ -908,8 +904,8 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     {
         case BLE_GAP_EVT_CONNECTED:
             NRF_LOG_INFO("Connected");
-            err_code = bsp_indication_set(BSP_INDICATE_CONNECTED);
-            APP_ERROR_CHECK(err_code);
+            //err_code = bsp_indication_set(BSP_INDICATE_CONNECTED);
+            //APP_ERROR_CHECK(err_code);
 
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
 
@@ -1075,7 +1071,7 @@ static void scheduler_init(void)
  * @param[in]   x_delta   Horizontal movement.
  * @param[in]   y_delta   Vertical movement.
  */
-static void buttons_value_send(bool button1, bool button2, bool button3, bool button4)
+static void buttons_value_send(uint8_t value)
 {
     ret_code_t err_code;
 
@@ -1083,7 +1079,7 @@ static void buttons_value_send(bool button1, bool button2, bool button3, bool bu
 
     APP_ERROR_CHECK_BOOL(INPUT_REP_BUTTONS_LEN == 1);
 
-    buffer[0] = button1 | (button2 << 1) | (button3 << 2) | (button4 << 3);
+    buffer[0] = value;
 
     err_code = ble_hids_inp_rep_send(&m_hids,
                                         INPUT_REP_BUTTONS_INDEX,
@@ -1164,6 +1160,7 @@ static void right_stick_value_send(uint8_t horizontal, uint8_t vertical)
  *
  * @param[in]   event   Event generated by button press.
  */
+/*
 static void bsp_event_handler(bsp_event_t event)
 {
     ret_code_t err_code;
@@ -1231,12 +1228,15 @@ static void bsp_event_handler(bsp_event_t event)
             break;
     }
 }
+*/
 
 
 /**@brief Function for initializing buttons and leds.
  *
  * @param[out] p_erase_bonds  Will be true if the clear bonding button was pressed to wake the application up.
  */
+
+/*
 static void buttons_leds_init(bool * p_erase_bonds)
 {
     ret_code_t err_code;
@@ -1251,6 +1251,7 @@ static void buttons_leds_init(bool * p_erase_bonds)
 
     *p_erase_bonds = (startup_event == BSP_EVENT_CLEAR_BONDING_DATA);
 }
+*/
 
 
 /**@brief Function for initializing the nrf log module.
@@ -1287,6 +1288,7 @@ static void idle_state_handle(void)
     }
 }
 
+/*
 void initialize_sample_timer()
 {
   NRF_TIMER4->MODE = 0;
@@ -1302,66 +1304,32 @@ void initialize_sample_timer()
   NRF_PPI->CH[6].TEP = (uint32_t) &NRF_SAADC->TASKS_SAMPLE;
 
   NRF_TIMER4->TASKS_START = 1;
-}
+}*/
 
 void gamepad_on_evt(gamepad_evt_t gamepad_evt)
 {
-  if (count > 100) 
-  {
-  switch (gamepad_evt.evt_type)
-  {
-    case GAMEPAD_BUTTONS_1:
-      printf("GAMEPAD_BUTTONS_1\n");
-      break;
-
-    case GAMEPAD_BUTTONS_2:
-      printf("GAMEPAD_BUTTONS_2\n");
-      break;
-
-    case GAMEPAD_LEFT_STICK:
+    switch (gamepad_evt.evt_type)
     {
-      uint8_t delta_x = abs(gamepad_evt.evt_value[0] - last_reported.left_stick_x);
-      uint8_t delta_y = abs(gamepad_evt.evt_value[1] - last_reported.left_stick_y);
-      if (delta_x > STICK_SENSITIVITY || delta_y > STICK_SENSITIVITY)
-      {
-        printf("LEFT X: %hd, Y: %hd\n", gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
-        left_stick_value_send(gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
-        last_reported.left_stick_x = gamepad_evt.evt_value[0];
-        last_reported.left_stick_y = gamepad_evt.evt_value[1];
-      }
-      break;
-    }
-  
-    case GAMEPAD_RIGHT_STICK:
-    {
-      uint8_t delta_x = abs(gamepad_evt.evt_value[0] - last_reported.right_stick_x);
-      uint8_t delta_y = abs(gamepad_evt.evt_value[1] - last_reported.right_stick_y);
-      if (delta_x > STICK_SENSITIVITY || delta_y > STICK_SENSITIVITY)
-      {
-        printf("RIGHT X: %hd, Y: %hd\n", gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
-        right_stick_value_send(gamepad_evt.evt_value[0], gamepad_evt.evt_value[1]);
-        last_reported.right_stick_x = gamepad_evt.evt_value[0];
-        last_reported.right_stick_y = gamepad_evt.evt_value[1];
-      }
-      break;
-    }
-    
-    case GAMEPAD_LEFT_TRIGGER:
-      printf("GAMEPAD_LEFT_TRIGGER\n");
-      break;
+        case GAMEPAD_BUTTONS:
+        {
+            uint8_t value = (((NRF_P0->IN & (1 << A_BUTTON)) == 0) << 0) |
+                            (((NRF_P0->IN & (1 << B_BUTTON)) == 0) << 1) |
+                            (((NRF_P0->IN & (1 << X_BUTTON)) == 0) << 2) |
+                            (((NRF_P0->IN & (1 << Y_BUTTON)) == 0) << 3);
+            printf("VALUE: %X\n", value);
+            buttons_value_send(value);
+            break;
+        }
+     
+        case GAMEPAD_LEFT_STICK:
+            break;
 
-    case GAMEPAD_RIGHT_TRIGGER:
-      printf("GAMEPAD_RIGHT_TRIGGER\n");
-      break;
+        case GAMEPAD_RIGHT_STICK:
+            break;
 
-    default:
-      break;
-  }
-  }else
-  {
-   printf("COUNT: %d\n", count);
-  count++;
-  }
+        case GAMEPAD_TRIGGERS:
+            break;
+    }
 }
 
 /**@brief Function for application main entry.
@@ -1370,16 +1338,19 @@ int main(void)
 {
     bool erase_bonds;
 
-    initialize_sample_timer();
+    //initialize_sample_timer();
     initialize_gamepad(&gamepad_on_evt);
-    configure_stick(0, SAADC_CH_PSELP_PSELP_AnalogInput1, SAADC_CH_PSELP_PSELP_AnalogInput2);
-    configure_stick(2, SAADC_CH_PSELP_PSELP_AnalogInput4, SAADC_CH_PSELP_PSELP_AnalogInput5);
-    initialize_saadc(SAADC_RESOLUTION_VAL_8bit);
+    //configure_stick(0, SAADC_CH_PSELP_PSELP_AnalogInput1, SAADC_CH_PSELP_PSELP_AnalogInput2);
+    //configure_stick(2, SAADC_CH_PSELP_PSELP_AnalogInput4, SAADC_CH_PSELP_PSELP_AnalogInput5);
+    //initialize_saadc(SAADC_RESOLUTION_VAL_8bit);
+
+    initialize_gpiote();
+    configure_buttons(&buttons, BUTTON_COUNT);
   
     // Initialize.
     log_init();
     timers_init();
-    buttons_leds_init(&erase_bonds);
+    //buttons_leds_init(&erase_bonds);
     power_management_init();
     ble_stack_init();
     scheduler_init();
@@ -1394,7 +1365,7 @@ int main(void)
     // Start execution.
     NRF_LOG_INFO("HID Mouse example started.");
     timers_start();
-    advertising_start(erase_bonds);
+    advertising_start(true);
 
     // Enter main loop.
     for (;;)

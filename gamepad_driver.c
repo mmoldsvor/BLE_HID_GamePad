@@ -1,11 +1,11 @@
 #include "gamepad_driver.h"
 
-static gamepad_evt_handler_t gamepad_evt_handler_instance;
+static gamepad_init_t gamepad_init;
 static int16_t saadc_buffer[4] = {0};
 
-void initialize_gamepad(gamepad_evt_handler_t gamepad_evt_handler)
+void initialize_gamepad(gamepad_evt_handler_t gamepad_on_evt)
 {
-  gamepad_evt_handler_instance = gamepad_evt_handler;
+  gamepad_init.gamepad_handle = gamepad_on_evt;
 }
 
 void initialize_saadc(uint8_t resolution)
@@ -31,21 +31,21 @@ void SAADC_IRQHandler()
 {
   if (NRF_SAADC->EVENTS_END)
   {
+    NRF_SAADC->EVENTS_END = 0;
+
     gamepad_evt_t gamepad_evt;
 
     gamepad_evt.evt_type = GAMEPAD_LEFT_STICK;
-    gamepad_evt.evt_value[0] = fmax(0, saadc_buffer[0]);
-    gamepad_evt.evt_value[1] = fmax(0, saadc_buffer[1]);
+    gamepad_evt.value[0] = saadc_buffer[0];
+    gamepad_evt.value[1] = saadc_buffer[1];
 
-    gamepad_evt_handler_instance(gamepad_evt);
+    gamepad_init.gamepad_handle(gamepad_evt);
 
     gamepad_evt.evt_type = GAMEPAD_RIGHT_STICK;
-    gamepad_evt.evt_value[0] = fmax(0, saadc_buffer[2]);
-    gamepad_evt.evt_value[1] = fmax(0, saadc_buffer[3]);
+    gamepad_evt.value[0] = saadc_buffer[2];
+    gamepad_evt.value[1] = saadc_buffer[3];
 
-    gamepad_evt_handler_instance(gamepad_evt);
-
-    NRF_SAADC->EVENTS_END = 0;
+    gamepad_init.gamepad_handle(gamepad_evt);
   }
 }
 
@@ -65,4 +65,50 @@ void configure_stick(uint8_t stick_index, uint8_t vertical_pin, uint8_t horizont
 
   NRF_SAADC->CH[stick_index].CONFIG = channel_config;
   NRF_SAADC->CH[stick_index + 1].CONFIG = channel_config;
+}
+
+void initialize_gpiote()
+{
+    NRF_GPIOTE->INTENSET = (1 << 31);
+
+    NVIC_EnableIRQ(GPIOTE_IRQn);
+    NVIC_SetPriority(GPIOTE_IRQn, 7);
+}
+
+void configure_buttons(uint8_t *p_buttons, uint8_t button_count)
+{
+    for (int i = 0; i < button_count; i++)
+    {
+        NRF_P0->PIN_CNF[*(p_buttons + i)] =     (GPIO_PIN_CNF_DIR_Input << GPIO_PIN_CNF_DIR_Pos) |
+                                                (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) |
+                                                (GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos) |
+                                                (GPIO_PIN_CNF_DRIVE_S0S1 << GPIO_PIN_CNF_DRIVE_Pos) |
+                                                (GPIO_PIN_CNF_SENSE_Low << GPIO_PIN_CNF_SENSE_Pos);
+    }
+
+    gamepad_init.p_buttons = p_buttons;
+    gamepad_init.button_count = button_count;
+}
+
+void GPIOTE_IRQHandler()
+{
+    if (NRF_GPIOTE->EVENTS_PORT)
+    {
+        NRF_P0->LATCH = NRF_P0->LATCH;
+        NRF_GPIOTE->EVENTS_PORT = 0;
+
+        for (int i = 0; i < gamepad_init.button_count; i++)
+        {
+            uint8_t button_pin = *(gamepad_init.p_buttons + i);
+            bool state = NRF_P0->IN & (1 << button_pin);
+            NRF_P0->PIN_CNF[button_pin] = (NRF_P0->PIN_CNF[button_pin] & ~(1 << GPIO_PIN_CNF_SENSE_Pos)) | (state << GPIO_PIN_CNF_SENSE_Pos);
+        }
+        gamepad_evt_t gamepad_evt;
+        gamepad_evt.evt_type = GAMEPAD_BUTTONS;
+        gamepad_evt.value[0] = 1;
+        gamepad_evt.value[1] = 2;
+
+        gamepad_init.gamepad_handle(gamepad_evt);
+
+    }
 }
