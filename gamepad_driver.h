@@ -11,6 +11,12 @@ typedef enum
 
 typedef struct
 {
+  uint8_t left_stick[2];
+  uint8_t right_stick[2];
+} analog_values_t;
+
+typedef struct
+{
     gamepad_evt_type_t  evt_type;
     uint8_t             value[2];
 } gamepad_evt_t;
@@ -20,8 +26,9 @@ typedef void (*gamepad_evt_handler_t) (gamepad_evt_t);
 typedef struct
 {
     gamepad_evt_handler_t gamepad_handle;
-    uint8_t *p_buttons;
-    uint8_t button_count;
+    uint8_t               *p_buttons;
+    uint8_t               button_count;
+    analog_values_t       analog_values;
 } gamepad_init_t;
 
 

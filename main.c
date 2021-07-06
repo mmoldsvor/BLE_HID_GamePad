@@ -101,8 +101,8 @@
 #define BATTERY_LEVEL_INCREMENT         1                                           /**< Increment between each simulated battery level measurement. */
 
 #define PNP_ID_VENDOR_ID_SOURCE         0x02                                        /**< Vendor ID Source. */
-#define PNP_ID_VENDOR_ID                0x1915                                      /**< Vendor ID. */
-#define PNP_ID_PRODUCT_ID               0xEEEE                                      /**< Product ID. */
+#define PNP_ID_VENDOR_ID                0x054c                                       /**< Vendor ID. */
+#define PNP_ID_PRODUCT_ID               0x09cc                                      /**< Product ID. */
 #define PNP_ID_PRODUCT_VERSION          0x0001                                      /**< Product Version. */
 
 /*lint -emacro(524, MIN_CONN_INTERVAL) // Loss of precision */
@@ -133,7 +133,7 @@
 #endif
 
 #define INPUT_REPORT_COUNT              3                                           /**< Number of input reports in this application. */
-#define INPUT_REP_BUTTONS_LEN           1                                           /**< Length of Mouse Input Report containing button data. */
+#define INPUT_REP_BUTTONS_LEN           2                                           /**< Length of Mouse Input Report containing button data. */
 #define INPUT_REP_LEFT_STICK_LEN        2                                           /**< Length of Mouse Input Report containing movement data. */
 #define INPUT_REP_RIGHT_STICK_LEN       2
 
@@ -162,14 +162,20 @@
 #define APP_ADV_FAST_DURATION           3000                                        /**< The advertising duration of fast advertising in units of 10 milliseconds. */
 #define APP_ADV_SLOW_DURATION           18000                                       /**< The advertising duration of slow advertising in units of 10 milliseconds. */
 
-#define STICK_SENSITIVITY               2
+#define STICK_SENSITIVITY               5
 
-#define Y_BUTTON          11
-#define X_BUTTON          12
-#define B_BUTTON          24
-#define A_BUTTON          25
+#define A_BUTTON          11
+#define B_BUTTON          12
+#define X_BUTTON          13
+#define Y_BUTTON          14
+#define DOWN_BUTTON       15
+#define RIGHT_BUTTON      16
+#define LEFT_BUTTON       22
+#define UP_BUTTON         23
+//#define LEFT_TRIGGER      19
+//#define RIGHT_TRIGGER     20
 
-#define BUTTON_COUNT      4
+#define BUTTON_COUNT      8
 
 APP_TIMER_DEF(m_battery_timer_id);                                                  /**< Battery timer. */
 BLE_BAS_DEF(m_bas);                                                                 /**< Battery service instance. */
@@ -183,8 +189,8 @@ NRF_BLE_QWR_DEF(m_qwr);                                                         
 BLE_ADVERTISING_DEF(m_advertising);                                                 /**< Advertising module instance. */
 
 
-uint8_t buttons[] = {A_BUTTON, B_BUTTON, X_BUTTON, Y_BUTTON};
-
+uint8_t buttons[] = {A_BUTTON, B_BUTTON, X_BUTTON, Y_BUTTON, DOWN_BUTTON, RIGHT_BUTTON, LEFT_BUTTON, UP_BUTTON};
+static int count = 0;
 static bool              m_in_boot_mode = false;                                    /**< Current protocol mode. */
 static uint16_t          m_conn_handle  = BLE_CONN_HANDLE_INVALID;                  /**< Handle of the current connection. */
 static pm_peer_id_t      m_peer_id;                                                 /**< Device reference handle to the current bonded central. */
@@ -555,15 +561,15 @@ static void hids_init(void)
         0x09, 0x01,                    //   USAGE (Pointer)
         0xa1, 0x00,                    //   COLLECTION (Physical)
         0x05, 0x09,                    //     USAGE_PAGE (Button)
-        0x95, 0x04,                    //     REPORT_COUNT (4)
+        0x95, 0x08,                    //     REPORT_COUNT (8)
         0x75, 0x01,                    //     REPORT_SIZE (1)
         0x19, 0x01,                    //     USAGE_MINIMUM (Button 1)
-        0x29, 0x04,                    //     USAGE_MAXIMUM (Button 4)
+        0x29, 0x08,                    //     USAGE_MAXIMUM (Button 8)
         0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
         0x25, 0x01,                    //     LOGICAL_MAXIMUM (1)
         0x81, 0x02,                    //     INPUT (Data,Var,Abs)
         0x95, 0x01,                    //     REPORT_COUNT (1)
-        0x75, 0x04,                    //     REPORT_SIZE (4)
+        0x75, 0x08,                    //     REPORT_SIZE (8)
         0x81, 0x01,                    //     INPUT (Cnst,Ary,Abs)
         0xc0,                          //   END_COLLECTION
         0x85, 0x02,                    //   REPORT_ID (2)
@@ -1077,8 +1083,7 @@ static void buttons_value_send(uint8_t value)
 
     uint8_t buffer[INPUT_REP_BUTTONS_LEN];
 
-    APP_ERROR_CHECK_BOOL(INPUT_REP_BUTTONS_LEN == 1);
-
+    printf("%X\n", value);
     buffer[0] = value;
 
     err_code = ble_hids_inp_rep_send(&m_hids,
@@ -1288,7 +1293,7 @@ static void idle_state_handle(void)
     }
 }
 
-/*
+
 void initialize_sample_timer()
 {
   NRF_TIMER4->MODE = 0;
@@ -1297,17 +1302,19 @@ void initialize_sample_timer()
 
   NRF_TIMER4->SHORTS = 1;
 
-  NRF_TIMER4->CC[0] = 100;
+  NRF_TIMER4->CC[0] = 500;
 
   NRF_PPI->CHEN |= (1 << 6);
   NRF_PPI->CH[6].EEP = (uint32_t) &NRF_TIMER4->EVENTS_COMPARE[0];
   NRF_PPI->CH[6].TEP = (uint32_t) &NRF_SAADC->TASKS_SAMPLE;
 
   NRF_TIMER4->TASKS_START = 1;
-}*/
+}
 
 void gamepad_on_evt(gamepad_evt_t gamepad_evt)
 {
+    if (count > 100)
+    {
     switch (gamepad_evt.evt_type)
     {
         case GAMEPAD_BUTTONS:
@@ -1315,21 +1322,29 @@ void gamepad_on_evt(gamepad_evt_t gamepad_evt)
             uint8_t value = (((NRF_P0->IN & (1 << A_BUTTON)) == 0) << 0) |
                             (((NRF_P0->IN & (1 << B_BUTTON)) == 0) << 1) |
                             (((NRF_P0->IN & (1 << X_BUTTON)) == 0) << 2) |
-                            (((NRF_P0->IN & (1 << Y_BUTTON)) == 0) << 3);
-            printf("VALUE: %X\n", value);
+                            (((NRF_P0->IN & (1 << Y_BUTTON)) == 0) << 3) |
+                            (((NRF_P0->IN & (1 << DOWN_BUTTON)) == 0) << 4) |
+                            (((NRF_P0->IN & (1 << RIGHT_BUTTON)) == 0) << 5) |
+                            (((NRF_P0->IN & (1 << LEFT_BUTTON)) == 0) << 6) |
+                            (((NRF_P0->IN & (1 << UP_BUTTON)) == 0) << 7);
+            printf("%X\n", value);
             buttons_value_send(value);
             break;
         }
      
         case GAMEPAD_LEFT_STICK:
+            left_stick_value_send(gamepad_evt.value[0], gamepad_evt.value[1]);
             break;
-
+  
         case GAMEPAD_RIGHT_STICK:
+            right_stick_value_send(gamepad_evt.value[0], gamepad_evt.value[1]);
             break;
 
         case GAMEPAD_TRIGGERS:
             break;
     }
+    }
+    count++;
 }
 
 /**@brief Function for application main entry.
@@ -1338,11 +1353,11 @@ int main(void)
 {
     bool erase_bonds;
 
-    //initialize_sample_timer();
+    initialize_sample_timer();
     initialize_gamepad(&gamepad_on_evt);
-    //configure_stick(0, SAADC_CH_PSELP_PSELP_AnalogInput1, SAADC_CH_PSELP_PSELP_AnalogInput2);
-    //configure_stick(2, SAADC_CH_PSELP_PSELP_AnalogInput4, SAADC_CH_PSELP_PSELP_AnalogInput5);
-    //initialize_saadc(SAADC_RESOLUTION_VAL_8bit);
+    configure_stick(0, SAADC_CH_PSELP_PSELP_AnalogInput1, SAADC_CH_PSELP_PSELP_AnalogInput2);
+    configure_stick(2, SAADC_CH_PSELP_PSELP_AnalogInput4, SAADC_CH_PSELP_PSELP_AnalogInput5);
+    initialize_saadc(SAADC_RESOLUTION_VAL_8bit);
 
     initialize_gpiote();
     configure_buttons(&buttons, BUTTON_COUNT);
